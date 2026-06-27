@@ -92,7 +92,11 @@ jobs:
           echo "Esperando que LocalStack esté disponible..."
           READY=false
           for i in $(seq 1 15); do
-            if curl -s http://localhost:4566/_localstack/health | grep -q "running"; then
+            # LocalStack imprime "Ready." en sus logs una vez que todos los
+            # servicios terminaron de inicializar. Es más confiable que
+            # parsear el JSON de /_localstack/health, cuyo formato varía
+            # entre versiones.
+            if docker logs localstack-ci 2>&1 | grep -q "Ready\."; then
               echo "LocalStack está arriba."
               READY=true
               break
@@ -104,9 +108,12 @@ jobs:
           docker logs localstack-ci --tail=30
 
           if [ "$READY" != "true" ]; then
-            echo "ERROR: LocalStack no respondió como 'running' dentro del tiempo de espera."
+            echo "ERROR: LocalStack no respondió 'Ready.' dentro del tiempo de espera."
             exit 1
           fi
+
+      - name: Verificar endpoint de salud (informativo)
+        run: curl -s http://localhost:4566/_localstack/health || true
 
       - name: Instalar AWS CLI
         run: |
