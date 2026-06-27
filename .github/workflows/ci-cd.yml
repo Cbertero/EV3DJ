@@ -1,0 +1,133 @@
+name: CI/CD - FastTrack-Notify
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build & Test (Maven)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Compilar y testear orders-service
+        working-directory: ./orders-service
+        run: mvn clean test -B
+
+      - name: Compilar y testear api-gateway
+        working-directory: ./api-gateway
+        run: mvn clean test -B
+
+      - name: Empaquetar orders-service (genera el .jar para la imagen Docker)
+        working-directory: ./orders-service
+        run: mvn clean package -DskipTests -B
+
+      - name: Empaquetar api-gateway
+        working-directory: ./api-gateway
+        run: mvn clean package -DskipTests -B
+
+  docker-build:
+    name: Build de imágenes Docker
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Construir imagen orders-service (multi-stage)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./orders-service
+          file: ./orders-service/Dockerfile
+          push: false
+          tags: fasttrack/orders-service:${{ github.sha }}
+          load: true
+
+      - name: Construir imagen api-gateway (multi-stage)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./api-gateway
+          file: ./api-gateway/Dockerfile
+          push: false
+          tags: fasttrack/api-gateway:${{ github.sha }}
+          load: true
+
+      - name: Simular push al registro de contenedores
+        run: |
+          echo "===================================================="
+          echo "Simulando 'docker push' al registro de contenedores"
+          echo "===================================================="
+          echo "Imagen: fasttrack/orders-service:${{ github.sha }}"
+          echo "Imagen: fasttrack/api-gateway:${{ github.sha }}"
+          echo "(En un entorno productivo aquí se haría login y push real"
+          echo " a Docker Hub / ECR / GHCR con docker push)."
+
+  provision-cloud:
+    name: Aprovisionamiento de infraestructura cloud (SQS)
+    runs-on: ubuntu-latest
+    needs: docker-build
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Levantar LocalStack para simular AWS
+        run: |
+          docker run -d --name localstack-ci -p 4566:4566 \
+            -e SERVICES=sqs -e AWS_DEFAULT_REGION=us-east-1 \
+            localstack/localstack:latest
+
+          echo "Esperando que LocalStack esté disponible..."
+          for i in $(seq 1 15); do
+            if curl -s http://localhost:4566/_localstack/health | grep -q "running"; then
+              echo "LocalStack está arriba."
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Instalar AWS CLI
+        run: |
+          if ! command -v aws &> /dev/null; then
+            pip install awscli --break-system-packages
+          fi
+
+      - name: Aprovisionar cola SQS fasttrack-notification-queue
+        env:
+          AWS_ACCESS_KEY_ID: dummy-access-key
+          AWS_SECRET_ACCESS_KEY: dummy-secret-key
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          aws --endpoint-url=http://localhost:4566 sqs create-queue \
+            --queue-name fasttrack-notification-queue
+
+          echo "Verificando cola creada:"
+          aws --endpoint-url=http://localhost:4566 sqs list-queues
+
+      - name: Detener LocalStack
+        if: always()
+        run: docker rm -f localstack-ci || true
+
+  deploy-ready:
+    name: Verificación final de despliegue
+    runs-on: ubuntu-latest
+    needs: provision-cloud
+    steps:
+      - name: Confirmar que el pipeline finalizó correctamente
+        run: |
+          echo "===================================================="
+          echo " Pipeline CI/CD finalizado exitosamente."
+          echo " Sistema listo para despliegue (docker stack deploy)."
+          echo "===================================================="

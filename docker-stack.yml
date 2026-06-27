@@ -1,0 +1,67 @@
+services:
+  # Servicio LocalStack para emular SQS en entorno local
+  localstack:
+    image: localstack/localstack:3.0
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - "./localstack-data:/var/lib/localstack"
+    networks:
+      - fasttrack-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+
+  # Microservicio Spring Boot: gestiona órdenes y publica eventos a SQS.
+  # No publica su puerto al host: solo es accesible dentro de la red
+  # privada 'fasttrack-net', es decir, sin exposición pública directa.
+  orders-service:
+    image: fasttrack/orders-service:latest
+    environment:
+      - AWS_REGION=us-east-1
+      - AWS_SQS_ENDPOINT=http://localstack:4566
+      - AWS_SQS_QUEUE_NAME=fasttrack-notification-queue
+    networks:
+      - fasttrack-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  # API Gateway: única puerta de entrada pública del sistema (puerto 8080).
+  # Es el único servicio que publica un puerto hacia el host.
+  api-gateway:
+    image: fasttrack/api-gateway:latest
+    environment:
+      - ORDERS_SERVICE_URL=http://orders-service:8081
+    ports:
+      - "8080:8080"
+    networks:
+      - fasttrack-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+
+networks:
+  fasttrack-net:
+    driver: overlay
+    attachable: true

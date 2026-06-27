@@ -1,0 +1,26 @@
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        # Ruta pública: crear una orden nueva (POST /orders -> orders-service:8081/orders)
+        - id: orders-create-route
+          uri: ${ORDERS_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/orders
+            - Method=POST
+
+        # Ruta pública: listar órdenes (GET /orders), útil para validación en la demo
+        - id: orders-list-route
+          uri: ${ORDERS_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/orders
+            - Method=GET
+
+      # Cualquier otra ruta (otros métodos, otros paths, acceso directo a /h2-console, etc.)
+      # no calza con los predicados anteriores y el Gateway responde 404 por defecto,
+      # sin reenviar nunca tráfico hacia el backend en el puerto 8081.
+      default-filters: []
+
