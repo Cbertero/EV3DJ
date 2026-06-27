@@ -313,7 +313,7 @@ Reason: No credentials were found in the environment...
 
 **Causa:** la imagen `localstack/localstack:latest` puede apuntar a una versión que exige un `LOCALSTACK_AUTH_TOKEN` (funcionalidad Pro) incluso para servicios gratuitos como SQS.
 
-**Solución:** fijar la imagen a una versión Community estable, tanto en `docker-compose.yml` como en `docker-stack.yml` (ya aplicado en este repo):
+**Solución:** fijar la imagen a una versión Community estable en los tres lugares donde se usa LocalStack en este proyecto (ya aplicado en este repo): `docker-compose.yml`, `docker-stack.yml`, y `.github/workflows/ci-cd.yml`:
 ```yaml
 localstack:
   image: localstack/localstack:3.0   # NO usar ':latest'

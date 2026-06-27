@@ -87,16 +87,26 @@ jobs:
         run: |
           docker run -d --name localstack-ci -p 4566:4566 \
             -e SERVICES=sqs -e AWS_DEFAULT_REGION=us-east-1 \
-            localstack/localstack:latest
+            localstack/localstack:3.0
 
           echo "Esperando que LocalStack esté disponible..."
+          READY=false
           for i in $(seq 1 15); do
             if curl -s http://localhost:4566/_localstack/health | grep -q "running"; then
               echo "LocalStack está arriba."
+              READY=true
               break
             fi
             sleep 2
           done
+
+          echo "Logs de LocalStack (diagnóstico):"
+          docker logs localstack-ci --tail=30
+
+          if [ "$READY" != "true" ]; then
+            echo "ERROR: LocalStack no respondió como 'running' dentro del tiempo de espera."
+            exit 1
+          fi
 
       - name: Instalar AWS CLI
         run: |
